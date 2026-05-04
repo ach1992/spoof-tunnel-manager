@@ -1,0 +1,16 @@
+# Local/offline release assets
+assets/*
+!assets/.gitkeep
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+.DS_Store
+
+# Build outputs
+spoof
+spoof-*
+*.tar.gz
+*.tgz
+*.zip
