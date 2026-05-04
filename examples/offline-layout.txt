@@ -1,0 +1,14 @@
+spoof-script/
+├── st-manager.sh
+└── spoof
+
+or:
+
+spoof-script/
+├── st-manager.sh
+└── assets/
+    └── spoof
+
+Run:
+
+sudo bash st-manager.sh --install-offline
