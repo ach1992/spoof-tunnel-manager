@@ -2,7 +2,7 @@
 
 A simple interactive manager for [`ParsaKSH/spoof-tunnel`](https://github.com/ParsaKSH/spoof-tunnel), pinned to **spoof-tunnel v1.0.3**.
 
-The goal is to make installation, offline deployment, configuration, systemd service setup, logs, health checks, and X-UI integration easier without requiring users to manually edit large JSON files.
+The goal is to make installation, offline deployment, configuration, key exchange, systemd service setup, logs, health checks, and X-UI integration easier without requiring users to manually edit large JSON files.
 
 > Use this only on servers and networks you own or are authorized to operate. Spoof Tunnel requires raw sockets and IP spoofing capability on both sides.
 
@@ -15,8 +15,9 @@ The goal is to make installation, offline deployment, configuration, systemd ser
 - No package manager usage by default
 - Does not update existing packages
 - Reuses existing binaries unless you explicitly replace them
+- Automatic server/client key generation through the installed `spoof keygen`
+- Copy/paste pairing blocks for easier two-server setup
 - Generates client/server JSON configs
-- Generates or reuses key pairs through the installed `spoof keygen`
 - Creates systemd services:
   - `spoof-client`
   - `spoof-server`
@@ -115,39 +116,22 @@ Then choose:
 /etc/spoof-tunnel/server.json
 /etc/spoof-tunnel/client.keys
 /etc/spoof-tunnel/server.keys
+/etc/spoof-tunnel/server.pending
+/etc/spoof-tunnel/server.pairing
+/etc/spoof-tunnel/client.pairing
 /etc/spoof-tunnel/backups/
 /var/log/spoof-tunnel/
 /etc/systemd/system/spoof-client.service
 /etc/systemd/system/spoof-server.service
 ```
 
-## Typical setup flow
+## Recommended three-step setup flow
 
-### On the server side
+This is the easiest flow and avoids manually entering public keys.
 
-```bash
-sudo st-manager
-```
+### 1) Foreign/server side: generate SERVER pairing
 
-Choose:
-
-```text
-5) Configure as Server
-```
-
-Enter:
-
-- transport: `udp` or `icmp`
-- tunnel listen address, usually `0.0.0.0`
-- tunnel port, usually `8080`
-- server spoof source IP
-- expected client spoof source IP
-- client real IP
-- client public key
-
-The manager prints server pairing information. Send that to the client side.
-
-### On the client side
+Run:
 
 ```bash
 sudo st-manager
@@ -156,61 +140,106 @@ sudo st-manager
 Choose:
 
 ```text
-4) Configure as Client
+4) Server Step 1: generate SERVER pairing
 ```
 
-Enter:
-
-- transport: must match the server
-- local SOCKS listen address, usually `127.0.0.1`
-- local SOCKS port, usually `1080`
-- server real IP
-- server tunnel port
-- client spoof source IP
-- expected server spoof source IP
-- server public key
-
-The client creates a local SOCKS5 endpoint such as:
+The manager automatically generates or reuses the server key pair, asks for server-side values, and prints a block like:
 
 ```text
-127.0.0.1:1080
+-----BEGIN SPOOF-TUNNEL SERVER PAIRING-----
+VERSION=v1.0.3
+ROLE=server
+TRANSPORT=udp
+SERVER_REAL_IP=1.2.3.4
+SERVER_PORT=8080
+SERVER_SPOOF_IP=185.143.233.151
+SERVER_PUBLIC_KEY=...
+-----END SPOOF-TUNNEL SERVER PAIRING-----
 ```
 
-Use this endpoint in X-UI as a SOCKS5 outbound/proxy target.
+Copy this full block to the Iran/client server.
 
-## Managing services
+### 2) Iran/client side: configure from SERVER pairing
+
+Run:
 
 ```bash
 sudo st-manager
 ```
 
-Useful menu options:
+Choose:
 
 ```text
-6) Start service
-7) Stop service
-8) Restart service
-9) Service status
-10) Live logs
-11) Health check
-12) X-UI helper
+5) Client Step 2: configure from SERVER pairing
 ```
 
-Manual commands also work:
+Paste the SERVER pairing block. The manager automatically fills the server IP, tunnel port, server spoof IP, and server public key. It then generates the client key pair, writes `client.json`, creates the `spoof-client` service, and prints a block like:
+
+```text
+-----BEGIN SPOOF-TUNNEL CLIENT PAIRING-----
+VERSION=v1.0.3
+ROLE=client
+TRANSPORT=udp
+CLIENT_REAL_IP=91.223.116.96
+CLIENT_SPOOF_IP=2.188.21.151
+CLIENT_PUBLIC_KEY=...
+LOCAL_SOCKS=127.0.0.1:1080
+-----END SPOOF-TUNNEL CLIENT PAIRING-----
+```
+
+Copy this full block back to the foreign/server side.
+
+### 3) Foreign/server side: finalize from CLIENT pairing
+
+Run:
 
 ```bash
-sudo systemctl restart spoof-client
-sudo systemctl status spoof-client --no-pager
-sudo journalctl -u spoof-client -f
+sudo st-manager
 ```
 
-Server side:
+Choose:
+
+```text
+6) Server Step 3: finalize from CLIENT pairing
+```
+
+Paste the CLIENT pairing block. The manager writes `server.json`, creates the `spoof-server` service, and the tunnel is ready to start.
+
+### 4) Start services
+
+On the foreign/server side:
 
 ```bash
 sudo systemctl restart spoof-server
 sudo systemctl status spoof-server --no-pager
-sudo journalctl -u spoof-server -f
 ```
+
+On the Iran/client side:
+
+```bash
+sudo systemctl restart spoof-client
+sudo systemctl status spoof-client --no-pager
+```
+
+Or use the menu:
+
+```text
+9) Start service
+12) Service status
+13) Live logs
+14) Health check
+```
+
+## Manual setup mode
+
+Manual mode still exists for advanced users:
+
+```text
+7) Manual configure as Client
+8) Manual configure as Server
+```
+
+In manual mode you must already have the peer public key. For most users, use the three-step pairing flow instead.
 
 ## X-UI integration
 
@@ -257,7 +286,3 @@ Or, if you use GitHub CLI:
 ```bash
 gh repo create ach1992/spoof-tunnel-manager --public --source=. --remote=origin --push
 ```
-
-## License
-
-MIT

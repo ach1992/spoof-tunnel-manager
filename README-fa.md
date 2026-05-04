@@ -2,21 +2,22 @@
 
 یک منیجر ساده و تعاملی برای پروژه‌ی [`ParsaKSH/spoof-tunnel`](https://github.com/ParsaKSH/spoof-tunnel) که مخصوص **spoof-tunnel v1.0.3** نوشته شده است.
 
-هدف این پروژه این است که نصب، نصب آفلاین، ساخت کانفیگ، ساخت سرویس systemd، مشاهده لاگ، health check و اتصال به X-UI ساده‌تر شود و کاربر مجبور نباشد فایل‌های JSON پیچیده را دستی ویرایش کند.
+هدف این پروژه این است که نصب، نصب آفلاین، ساخت کانفیگ، تبادل کلید، ساخت سرویس systemd، مشاهده لاگ، health check و اتصال به X-UI ساده‌تر شود و کاربر مجبور نباشد فایل‌های JSON پیچیده را دستی ویرایش کند.
 
-> فقط روی سرورها و شبکه‌هایی استفاده کنید که مالک آن هستید یا مجوز مدیریت آن‌ها را دارید. Spoof Tunnel برای کار کردن به raw socket و قابلیت ارسال packet اسپوف‌شده در هر دو سمت نیاز دارد.
+> فقط روی سرورها و شبکه‌هایی استفاده شود که مالک آن هستید یا مجوز استفاده دارید. Spoof Tunnel به raw socket و قابلیت IP spoofing روی دو سمت نیاز دارد.
 
-## قابلیت‌ها
+## امکانات
 
-- منوی انگلیسی و قابل فهم
+- منوی تعاملی انگلیسی
 - هدف‌گذاری فقط روی **spoof-tunnel v1.0.3**
 - نصب کاملاً آفلاین
 - نصب آنلاین از GitHub release
-- بدون استفاده از package manager به‌صورت پیش‌فرض
-- بدون آپدیت کردن پکیج‌های موجود سیستم
-- اگر باینری از قبل نصب باشد، بدون اجازه جایگزین نمی‌شود
-- ساخت کانفیگ JSON کلاینت و سرور
-- ساخت یا استفاده مجدد از key pair با دستور `spoof keygen`
+- عدم استفاده از package manager به‌صورت پیش‌فرض
+- عدم اجرای `apt update`، `apt install` یا آپدیت پکیج‌ها
+- عدم جایگزینی باینری موجود مگر با تأیید کاربر
+- تولید خودکار کلیدهای سرور و کلاینت با `spoof keygen`
+- Pairing block برای کپی/پیست راحت بین دو سرور
+- تولید کانفیگ JSON برای client/server
 - ساخت سرویس‌های systemd:
   - `spoof-client`
   - `spoof-server`
@@ -24,11 +25,9 @@
 - health check پایه
 - راهنمای اتصال X-UI به SOCKS5 لوکال
 - بکاپ و ریستور کانفیگ
-- حذف کامل نصب‌شده‌ها
+- حذف کامل
 
 ## نام پیشنهادی ریپازیتوری
-
-پیشنهاد برای GitHub شما:
 
 ```bash
 github.com/ach1992/spoof-tunnel-manager
@@ -37,42 +36,34 @@ github.com/ach1992/spoof-tunnel-manager
 ## فایل‌ها
 
 ```text
-st-manager.sh   اسکریپت اصلی منیجر
+st-manager.sh   اسکریپت اصلی
 README.md       مستندات انگلیسی
 README-fa.md    مستندات فارسی
-assets/         پوشه اختیاری برای فایل‌های نصب آفلاین
-examples/       پوشه اختیاری برای نمونه‌ها
+assets/         پوشه اختیاری برای فایل‌های آفلاین
+examples/       فایل‌های نمونه
 ```
 
-## اجرای آنلاین سریع
+## استفاده آنلاین
 
-بعد از اینکه ریپازیتوری را روی GitHub خودتان منتشر کردید:
+بعد از اینکه ریپازیتوری را روی GitHub خودت منتشر کردی:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ach1992/spoof-tunnel-manager/main/st-manager.sh)
 ```
 
-سپس از منو انتخاب کنید:
+بعد از منو انتخاب کن:
 
 ```text
 3) Install spoof v1.0.3 from GitHub release (online)
 ```
 
-منیجر تلاش می‌کند asset مناسب نسخه v1.0.3 را برای معماری سرور پیدا کند. اگر پیدا نشد، فقط در صورتی سراغ build از سورس می‌رود که `go` از قبل روی سیستم وجود داشته باشد. اسکریپت Go نصب نمی‌کند و پکیج‌ها را آپدیت نمی‌کند.
+اسکریپت تلاش می‌کند asset مناسب نسخه v1.0.3 را برای معماری سرور پیدا کند. اگر نشد، فقط در صورتی از سورس build می‌کند که `go` از قبل روی سرور نصب باشد. خودش Go یا هیچ پکیجی نصب نمی‌کند.
 
-## اجرای آفلاین
+## استفاده آفلاین
 
-این روش برای سرورهایی که به GitHub دسترسی ندارند مناسب‌تر است.
+این روش برای سرورهایی که دسترسی به GitHub ندارند پیشنهاد می‌شود.
 
-1. روی یک سیستم دارای اینترنت، این ریپازیتوری را دانلود کنید.
-2. باینری یا آرشیو سازگار با **spoof-tunnel v1.0.3** را دستی دانلود کنید.
-3. یک پوشه بسازید، مثلاً:
-
-```bash
-mkdir spoof-script
-```
-
-4. فایل‌ها را داخل پوشه قرار دهید:
+روی یک سیستم دارای اینترنت، فایل manager و باینری سازگار **spoof-tunnel v1.0.3** را دانلود کن. سپس پوشه‌ای مثل زیر بساز:
 
 ```text
 spoof-script/
@@ -80,27 +71,26 @@ spoof-script/
 └── spoof                 # یا spoof-linux-amd64 / spoof-linux-arm64 / .tar.gz / .zip
 ```
 
-یا می‌توانید باینری را اینجا بگذارید:
+یا باینری را اینجا بگذار:
 
 ```text
 spoof-script/assets/spoof
 ```
 
-5. پوشه را به سرور منتقل کنید.
-6. اجرا کنید:
+پوشه را به سرور منتقل کن و اجرا کن:
 
 ```bash
 cd spoof-script
 sudo bash st-manager.sh --install-offline
 ```
 
-یا منوی تعاملی را اجرا کنید:
+یا منوی تعاملی را باز کن:
 
 ```bash
 sudo bash st-manager.sh
 ```
 
-سپس انتخاب کنید:
+و انتخاب کن:
 
 ```text
 2) Install spoof v1.0.3 from local files (offline)
@@ -115,106 +105,134 @@ sudo bash st-manager.sh
 /etc/spoof-tunnel/server.json
 /etc/spoof-tunnel/client.keys
 /etc/spoof-tunnel/server.keys
+/etc/spoof-tunnel/server.pending
+/etc/spoof-tunnel/server.pairing
+/etc/spoof-tunnel/client.pairing
 /etc/spoof-tunnel/backups/
 /var/log/spoof-tunnel/
 /etc/systemd/system/spoof-client.service
 /etc/systemd/system/spoof-server.service
 ```
 
-## جریان معمول راه‌اندازی
+## روش پیشنهادی سه مرحله‌ای
 
-### سمت سرور
+این روش ساده‌ترین حالت است و دیگر لازم نیست public key را دستی پیدا کنی.
 
-```bash
-sudo st-manager
-```
+### ۱) سمت خارج / سرور: ساخت SERVER pairing
 
-گزینه زیر را انتخاب کنید:
-
-```text
-5) Configure as Server
-```
-
-اطلاعاتی که می‌گیرد:
-
-- transport: مقدار `udp` یا `icmp`
-- آدرس listen تونل، معمولاً `0.0.0.0`
-- پورت تونل، معمولاً `8080`
-- IP اسپوف‌شده سمت سرور
-- IP اسپوف‌شده مورد انتظار از سمت کلاینت
-- IP واقعی کلاینت
-- public key کلاینت
-
-در پایان، منیجر اطلاعات pairing سمت سرور را نمایش می‌دهد. آن را به سمت کلاینت بدهید.
-
-### سمت کلاینت
+روی سرور خارج اجرا کن:
 
 ```bash
 sudo st-manager
 ```
 
-گزینه زیر را انتخاب کنید:
+گزینه را انتخاب کن:
 
 ```text
-4) Configure as Client
+4) Server Step 1: generate SERVER pairing
 ```
 
-اطلاعاتی که می‌گیرد:
-
-- transport: باید با سرور یکی باشد
-- آدرس SOCKS لوکال، معمولاً `127.0.0.1`
-- پورت SOCKS لوکال، معمولاً `1080`
-- IP واقعی سرور
-- پورت تونل سرور
-- IP اسپوف‌شده سمت کلاینت
-- IP اسپوف‌شده مورد انتظار از سمت سرور
-- public key سرور
-
-در سمت کلاینت یک SOCKS5 لوکال ساخته می‌شود، مثلاً:
+اسکریپت کلید سرور را خودکار می‌سازد یا کلید قبلی را reuse می‌کند، اطلاعات سمت سرور را می‌گیرد و خروجی‌ای شبیه این می‌دهد:
 
 ```text
-127.0.0.1:1080
+-----BEGIN SPOOF-TUNNEL SERVER PAIRING-----
+VERSION=v1.0.3
+ROLE=server
+TRANSPORT=udp
+SERVER_REAL_IP=1.2.3.4
+SERVER_PORT=8080
+SERVER_SPOOF_IP=185.143.233.151
+SERVER_PUBLIC_KEY=...
+-----END SPOOF-TUNNEL SERVER PAIRING-----
 ```
 
-از همین endpoint می‌توانید در X-UI به‌عنوان outbound/proxy از نوع SOCKS5 استفاده کنید.
+این بلاک کامل را کپی کن و ببر روی سرور ایران / کلاینت.
 
-## مدیریت سرویس‌ها
+### ۲) سمت ایران / کلاینت: ساخت کانفیگ از SERVER pairing
+
+روی سرور ایران اجرا کن:
 
 ```bash
 sudo st-manager
 ```
 
-گزینه‌های مهم:
+گزینه را انتخاب کن:
 
 ```text
-6) Start service
-7) Stop service
-8) Restart service
-9) Service status
-10) Live logs
-11) Health check
-12) X-UI helper
+5) Client Step 2: configure from SERVER pairing
 ```
 
-دستورات دستی هم قابل استفاده هستند:
+بلاک SERVER pairing را paste کن. اسکریپت خودش IP سرور، پورت تونل، spoof IP سرور و public key سرور را پر می‌کند. بعد کلید کلاینت را خودکار می‌سازد، `client.json` و سرویس `spoof-client` را ایجاد می‌کند و خروجی‌ای شبیه این می‌دهد:
+
+```text
+-----BEGIN SPOOF-TUNNEL CLIENT PAIRING-----
+VERSION=v1.0.3
+ROLE=client
+TRANSPORT=udp
+CLIENT_REAL_IP=91.223.116.96
+CLIENT_SPOOF_IP=2.188.21.151
+CLIENT_PUBLIC_KEY=...
+LOCAL_SOCKS=127.0.0.1:1080
+-----END SPOOF-TUNNEL CLIENT PAIRING-----
+```
+
+این بلاک کامل را کپی کن و برگردان روی سرور خارج.
+
+### ۳) سمت خارج / سرور: نهایی‌سازی از CLIENT pairing
+
+روی سرور خارج اجرا کن:
 
 ```bash
-sudo systemctl restart spoof-client
-sudo systemctl status spoof-client --no-pager
-sudo journalctl -u spoof-client -f
+sudo st-manager
 ```
 
-سمت سرور:
+گزینه را انتخاب کن:
+
+```text
+6) Server Step 3: finalize from CLIENT pairing
+```
+
+بلاک CLIENT pairing را paste کن. اسکریپت `server.json` و سرویس `spoof-server` را ایجاد می‌کند.
+
+### ۴) اجرای سرویس‌ها
+
+روی سرور خارج:
 
 ```bash
 sudo systemctl restart spoof-server
 sudo systemctl status spoof-server --no-pager
-sudo journalctl -u spoof-server -f
 ```
+
+روی سرور ایران:
+
+```bash
+sudo systemctl restart spoof-client
+sudo systemctl status spoof-client --no-pager
+```
+
+یا از منو استفاده کن:
+
+```text
+9) Start service
+12) Service status
+13) Live logs
+14) Health check
+```
+
+## حالت دستی
+
+برای کاربران حرفه‌ای حالت دستی هم وجود دارد:
+
+```text
+7) Manual configure as Client
+8) Manual configure as Server
+```
+
+در حالت دستی باید public key طرف مقابل را از قبل داشته باشی. برای اکثر کاربران همان روش سه مرحله‌ای بهتر است.
 
 ## اتصال به X-UI
 
-روی سرور مبدأ/کلاینت، در X-UI خروجی یا proxy را به SOCKS5 لوکال وصل کنید:
+روی سرور ایران / کلاینت، X-UI باید به SOCKS5 لوکال ساخته‌شده توسط spoof-tunnel وصل شود:
 
 ```text
 Protocol: SOCKS5
@@ -232,12 +250,12 @@ sudo st-manager --xui-helper
 
 ## نکات و محدودیت‌ها
 
-- اسکریپت عمداً از `apt update`، `apt install`، آپگرید پکیج‌ها و نصب اجباری dependency استفاده نمی‌کند.
-- نصب آنلاین فقط وقتی ممکن است که `curl` یا `wget` از قبل روی سیستم وجود داشته باشد.
-- build از سورس فقط وقتی انجام می‌شود که `go` از قبل روی سیستم نصب باشد.
-- برای محیط‌های محدود، نصب آفلاین بهترین حالت است.
-- raw socket نیاز به root یا capability مناسب دارد.
-- هر دو سرور باید توانایی ارسال packet اسپوف‌شده داشته باشند، وگرنه تونل کار نمی‌کند.
+- اسکریپت عمداً `apt update`، `apt install`، آپدیت پکیج یا نصب اجباری dependency انجام نمی‌دهد.
+- نصب آنلاین به `curl` یا `wget` از قبل نصب‌شده نیاز دارد.
+- build از سورس فقط وقتی انجام می‌شود که `go` از قبل نصب باشد.
+- برای محیط‌های محدود، نصب آفلاین بهترین گزینه است.
+- raw socket به root یا capability مناسب نیاز دارد.
+- هر دو سرور باید بتوانند spoofed packet ارسال کنند، وگرنه تونل کار نمی‌کند.
 
 ## انتشار روی GitHub
 
@@ -252,12 +270,8 @@ git remote add origin https://github.com/ach1992/spoof-tunnel-manager.git
 git push -u origin main
 ```
 
-یا اگر GitHub CLI دارید:
+یا با GitHub CLI:
 
 ```bash
 gh repo create ach1992/spoof-tunnel-manager --public --source=. --remote=origin --push
 ```
-
-## لایسنس
-
-MIT

@@ -7,7 +7,7 @@ set -u
 set -o pipefail
 
 APP_NAME="Spoof Tunnel Manager"
-APP_VERSION="0.1.0"
+APP_VERSION="0.2.0"
 TARGET_SPOOF_VERSION="v1.0.3"
 UPSTREAM_REPO="ParsaKSH/spoof-tunnel"
 UPSTREAM_RELEASE_API="https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${TARGET_SPOOF_VERSION}"
@@ -22,6 +22,9 @@ CLIENT_CONFIG="${CONFIG_DIR}/client.json"
 SERVER_CONFIG="${CONFIG_DIR}/server.json"
 CLIENT_KEYS="${CONFIG_DIR}/client.keys"
 SERVER_KEYS="${CONFIG_DIR}/server.keys"
+SERVER_PENDING="${CONFIG_DIR}/server.pending"
+SERVER_PAIRING="${CONFIG_DIR}/server.pairing"
+CLIENT_PAIRING="${CONFIG_DIR}/client.pairing"
 CLIENT_SERVICE="/etc/systemd/system/spoof-client.service"
 SERVER_SERVICE="/etc/systemd/system/spoof-server.service"
 
@@ -182,6 +185,27 @@ ask_log_level() {
       *) fail "Invalid log level. Use debug, info, warn, or error." ;;
     esac
   done
+}
+
+ask_non_empty() {
+  local prompt="$1" default="${2:-}" value
+  while true; do
+    value="$(ask "$prompt" "$default")"
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+      return 0
+    fi
+    fail "This value is required."
+  done
+}
+
+ask_yes_no() {
+  local prompt="$1" default="${2:-N}"
+  if confirm "$prompt" "$default"; then
+    printf 'yes'
+  else
+    printf 'no'
+  fi
 }
 
 json_escape() {
@@ -486,7 +510,8 @@ generate_keys() {
   public="$(parse_key_output "$out" 'public')"
   if [ -z "$private" ] || [ -z "$public" ]; then
     warn "Could not parse keygen output automatically."
-    say "$out"
+    printf '%s
+' "$out" >&2
     private="$(ask "Enter ${prefix} private key manually" "")"
     public="$(ask "Enter ${prefix} public key manually" "")"
   fi
@@ -518,6 +543,250 @@ load_keys_or_generate() {
   generated="$(generate_keys "$role" || true)"
   [ -n "$generated" ] || return 1
   printf '%s' "$generated"
+}
+
+
+read_key_pair() {
+  local role="$1" keyfile private public
+  keyfile="${CONFIG_DIR}/${role}.keys"
+  [ -f "$keyfile" ] || return 1
+  private="$(grep '^PRIVATE_KEY=' "$keyfile" | sed 's/^PRIVATE_KEY=//' | tail -n 1)"
+  public="$(grep '^PUBLIC_KEY=' "$keyfile" | sed 's/^PUBLIC_KEY=//' | tail -n 1)"
+  [ -n "$private" ] && [ -n "$public" ] || return 1
+  printf '%s|%s' "$private" "$public"
+}
+
+get_kv_file_value() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 1
+  grep -E "^${key}=" "$file" | tail -n 1 | sed -E "s/^${key}=//" | sed 's/\r$//'
+}
+
+read_pairing_block() {
+  local line block=""
+  say "Paste the pairing block now. Press Enter on an empty line when finished."
+  while IFS= read -r line; do
+    [ -z "$line" ] && break
+    block="${block}${line}
+"
+  done
+  printf '%s' "$block"
+}
+
+pairing_value() {
+  local block="$1" key="$2"
+  printf '%s\n' "$block" |
+    sed 's/\r$//' |
+    grep -E "^[[:space:]]*${key}[[:space:]]*=" |
+    tail -n 1 |
+    sed -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//" |
+    sed -E 's/^"//; s/"$//'
+}
+
+save_server_pending() {
+  local transport="$1" listen_addr="$2" listen_port="$3" server_real_ip="$4" server_spoof_ip="$5" log_level="$6" log_file="$7"
+  cat > "$SERVER_PENDING" <<EOF_PENDING
+TRANSPORT=$transport
+SERVER_LISTEN_ADDR=$listen_addr
+SERVER_PORT=$listen_port
+SERVER_REAL_IP=$server_real_ip
+SERVER_SPOOF_IP=$server_spoof_ip
+SERVER_LOG_LEVEL=$log_level
+SERVER_LOG_FILE=$log_file
+EOF_PENDING
+  chmod 600 "$SERVER_PENDING"
+}
+
+print_server_pairing_from_file() {
+  local keys public transport server_real_ip server_port server_spoof_ip
+  keys="$(read_key_pair server || true)"
+  [ -n "$keys" ] || { fail "Server keys were not found. Run server step 1 first."; return 1; }
+  public="${keys#*|}"
+  transport="$(get_kv_file_value "$SERVER_PENDING" TRANSPORT || true)"
+  server_real_ip="$(get_kv_file_value "$SERVER_PENDING" SERVER_REAL_IP || true)"
+  server_port="$(get_kv_file_value "$SERVER_PENDING" SERVER_PORT || true)"
+  server_spoof_ip="$(get_kv_file_value "$SERVER_PENDING" SERVER_SPOOF_IP || true)"
+  [ -n "$transport" ] && [ -n "$server_real_ip" ] && [ -n "$server_port" ] && [ -n "$server_spoof_ip" ] || {
+    fail "Server pending file is incomplete: $SERVER_PENDING"
+    return 1
+  }
+  say "\n${BOLD}Copy this SERVER pairing block to the client/Iran server:${NC}"
+  cat <<EOF_PAIR
+-----BEGIN SPOOF-TUNNEL SERVER PAIRING-----
+VERSION=${TARGET_SPOOF_VERSION}
+ROLE=server
+TRANSPORT=${transport}
+SERVER_REAL_IP=${server_real_ip}
+SERVER_PORT=${server_port}
+SERVER_SPOOF_IP=${server_spoof_ip}
+SERVER_PUBLIC_KEY=${public}
+-----END SPOOF-TUNNEL SERVER PAIRING-----
+EOF_PAIR
+}
+
+print_client_pairing_from_file() {
+  local keys public client_real_ip client_spoof_ip transport local_socks
+  keys="$(read_key_pair client || true)"
+  [ -n "$keys" ] || { fail "Client keys were not found. Configure client first."; return 1; }
+  public="${keys#*|}"
+  client_real_ip="$(get_kv_file_value "$CLIENT_PAIRING" CLIENT_REAL_IP || true)"
+  client_spoof_ip="$(get_kv_file_value "$CLIENT_PAIRING" CLIENT_SPOOF_IP || true)"
+  transport="$(get_kv_file_value "$CLIENT_PAIRING" TRANSPORT || true)"
+  local_socks="$(get_kv_file_value "$CLIENT_PAIRING" LOCAL_SOCKS || true)"
+  [ -n "$client_real_ip" ] && [ -n "$client_spoof_ip" ] || {
+    fail "Client pairing file is incomplete: $CLIENT_PAIRING"
+    return 1
+  }
+  say "\n${BOLD}Copy this CLIENT pairing block back to the server/foreign side:${NC}"
+  cat <<EOF_PAIR
+-----BEGIN SPOOF-TUNNEL CLIENT PAIRING-----
+VERSION=${TARGET_SPOOF_VERSION}
+ROLE=client
+TRANSPORT=${transport}
+CLIENT_REAL_IP=${client_real_ip}
+CLIENT_SPOOF_IP=${client_spoof_ip}
+CLIENT_PUBLIC_KEY=${public}
+LOCAL_SOCKS=${local_socks}
+-----END SPOOF-TUNNEL CLIENT PAIRING-----
+EOF_PAIR
+}
+
+prepare_server_pairing() {
+  require_root || return 1
+  mkdirs
+  [ -x "$INSTALL_BIN" ] || { fail "spoof binary is not installed. Run offline/online install first."; return 1; }
+  backup_now >/dev/null 2>&1 || true
+
+  say "\n${BOLD}Server Step 1: generate SERVER pairing info${NC}"
+  say "This step is for the foreign/server side. It generates the server key automatically."
+  say "You will copy the output block to the Iran/client side later."
+
+  local keys transport listen_addr listen_port server_real_ip server_spoof_ip log_level log_file
+  keys="$(load_keys_or_generate "server" || true)"
+  [ -n "$keys" ] || return 1
+  transport="$(ask_transport)"
+  listen_addr="$(ask "Tunnel listen address" "0.0.0.0")"
+  listen_port="$(ask_port "Tunnel listen port" "8080")"
+  server_real_ip="$(ask_ipv4 "This server real/public IP to share with client" "")"
+  server_spoof_ip="$(ask_ipv4 "Server spoof source IP" "")"
+  log_level="$(ask_log_level)"
+  log_file="$(ask "Server log file path" "${LOG_DIR}/server.log")"
+
+  save_server_pending "$transport" "$listen_addr" "$listen_port" "$server_real_ip" "$server_spoof_ip" "$log_level" "$log_file"
+  ok "Server key and pending settings saved."
+  ok "No client key is needed in this step."
+  print_server_pairing_from_file
+  say "\nNext: run the manager on the client/Iran server and choose: Client Step 2."
+}
+
+configure_client_from_pairing() {
+  require_root || return 1
+  need_systemd || return 1
+  mkdirs
+  [ -x "$INSTALL_BIN" ] || { fail "spoof binary is not installed. Run offline/online install first."; return 1; }
+  backup_now >/dev/null 2>&1 || true
+
+  say "\n${BOLD}Client Step 2: configure CLIENT from SERVER pairing${NC}"
+  say "Paste the SERVER pairing block generated on the foreign/server side."
+  local block transport server_addr server_port server_spoof_ip server_public_key listen_addr listen_port client_real_ip client_spoof_ip keys private_key public_key log_level log_file
+  block="$(read_pairing_block)"
+  transport="$(pairing_value "$block" TRANSPORT)"
+  server_addr="$(pairing_value "$block" SERVER_REAL_IP)"
+  server_port="$(pairing_value "$block" SERVER_PORT)"
+  server_spoof_ip="$(pairing_value "$block" SERVER_SPOOF_IP)"
+  server_public_key="$(pairing_value "$block" SERVER_PUBLIC_KEY)"
+
+  transport="$(ask "Transport type" "${transport:-udp}")"
+  case "$transport" in udp|icmp) ;; *) fail "Invalid transport in pairing block or input. Use udp or icmp."; return 1 ;; esac
+  server_addr="$(ask_ipv4 "Server real IP" "$server_addr")"
+  server_port="$(ask_port "Server tunnel port" "${server_port:-8080}")"
+  server_spoof_ip="$(ask_ipv4 "Expected server spoof source IP" "$server_spoof_ip")"
+  server_public_key="$(ask_non_empty "Server public key" "$server_public_key")"
+  listen_addr="$(ask "Local SOCKS listen address" "127.0.0.1")"
+  listen_port="$(ask_port "Local SOCKS listen port" "1080")"
+  client_real_ip="$(ask_ipv4 "This client/Iran server real IP to share with server" "")"
+  client_spoof_ip="$(ask_ipv4 "Client spoof source IP" "")"
+
+  keys="$(load_keys_or_generate "client" || true)"
+  [ -n "$keys" ] || return 1
+  private_key="${keys%%|*}"
+  public_key="${keys#*|}"
+  log_level="$(ask_log_level)"
+  log_file="$(ask "Client log file path" "${LOG_DIR}/client.log")"
+
+  write_client_config "$transport" "$listen_addr" "$listen_port" "$server_addr" "$server_port" "$client_spoof_ip" "$server_spoof_ip" "$private_key" "$server_public_key" "$log_level" "$log_file"
+  create_client_service
+  cat > "$CLIENT_PAIRING" <<EOF_CLIENT_PAIR
+TRANSPORT=$transport
+CLIENT_REAL_IP=$client_real_ip
+CLIENT_SPOOF_IP=$client_spoof_ip
+LOCAL_SOCKS=${listen_addr}:${listen_port}
+EOF_CLIENT_PAIR
+  chmod 600 "$CLIENT_PAIRING"
+  ok "Client config written: $CLIENT_CONFIG"
+  print_client_pairing_from_file
+  say "\nNext: go back to the foreign/server side and choose: Server Step 3."
+}
+
+finalize_server_from_client_pairing() {
+  require_root || return 1
+  need_systemd || return 1
+  mkdirs
+  [ -x "$INSTALL_BIN" ] || { fail "spoof binary is not installed. Run offline/online install first."; return 1; }
+  [ -f "$SERVER_PENDING" ] || { fail "Server pending file not found: $SERVER_PENDING"; say "Run Server Step 1 first on this server."; return 1; }
+  backup_now >/dev/null 2>&1 || true
+
+  say "\n${BOLD}Server Step 3: finalize SERVER from CLIENT pairing${NC}"
+  say "Paste the CLIENT pairing block generated on the Iran/client side."
+  local block transport listen_addr listen_port server_spoof_ip client_real_ip client_spoof_ip client_public_key keys private_key public_key log_level log_file
+  block="$(read_pairing_block)"
+  client_real_ip="$(pairing_value "$block" CLIENT_REAL_IP)"
+  client_spoof_ip="$(pairing_value "$block" CLIENT_SPOOF_IP)"
+  client_public_key="$(pairing_value "$block" CLIENT_PUBLIC_KEY)"
+
+  transport="$(get_kv_file_value "$SERVER_PENDING" TRANSPORT || true)"
+  listen_addr="$(get_kv_file_value "$SERVER_PENDING" SERVER_LISTEN_ADDR || true)"
+  listen_port="$(get_kv_file_value "$SERVER_PENDING" SERVER_PORT || true)"
+  server_spoof_ip="$(get_kv_file_value "$SERVER_PENDING" SERVER_SPOOF_IP || true)"
+  log_level="$(get_kv_file_value "$SERVER_PENDING" SERVER_LOG_LEVEL || true)"
+  log_file="$(get_kv_file_value "$SERVER_PENDING" SERVER_LOG_FILE || true)"
+
+  transport="$(ask "Transport type" "${transport:-udp}")"
+  case "$transport" in udp|icmp) ;; *) fail "Invalid transport. Use udp or icmp."; return 1 ;; esac
+  listen_addr="$(ask "Tunnel listen address" "${listen_addr:-0.0.0.0}")"
+  listen_port="$(ask_port "Tunnel listen port" "${listen_port:-8080}")"
+  server_spoof_ip="$(ask_ipv4 "Server spoof source IP" "$server_spoof_ip")"
+  client_real_ip="$(ask_ipv4 "Client real IP for responses" "$client_real_ip")"
+  client_spoof_ip="$(ask_ipv4 "Expected client spoof source IP" "$client_spoof_ip")"
+  client_public_key="$(ask_non_empty "Client public key" "$client_public_key")"
+
+  keys="$(read_key_pair server || load_keys_or_generate server || true)"
+  [ -n "$keys" ] || return 1
+  private_key="${keys%%|*}"
+  public_key="${keys#*|}"
+  log_level="$(ask_log_level_default="${log_level:-info}"; ask "Log level" "$ask_log_level_default")"
+  case "$log_level" in debug|info|warn|error) ;; *) fail "Invalid log level. Use debug, info, warn, or error."; return 1 ;; esac
+  log_file="$(ask "Server log file path" "${log_file:-${LOG_DIR}/server.log}")"
+
+  write_server_config "$transport" "$listen_addr" "$listen_port" "$server_spoof_ip" "$client_spoof_ip" "$client_real_ip" "$private_key" "$client_public_key" "$log_level" "$log_file"
+  create_server_service
+  ok "Server config written: $SERVER_CONFIG"
+  say "Server public key in use: $public_key"
+  say "\nNow you can start/restart spoof-server and spoof-client from the service menu."
+}
+
+show_pairing_info() {
+  say "\n${BOLD}Saved Pairing Info${NC}"
+  if [ -f "$SERVER_PENDING" ] && [ -f "$SERVER_KEYS" ]; then
+    print_server_pairing_from_file || true
+  else
+    warn "No complete server pairing info found."
+  fi
+  if [ -f "$CLIENT_PAIRING" ] && [ -f "$CLIENT_KEYS" ]; then
+    print_client_pairing_from_file || true
+  else
+    warn "No complete client pairing info found."
+  fi
 }
 
 create_client_service() {
@@ -990,19 +1259,23 @@ main_menu() {
     say "1) Install/repair manager only"
     say "2) Install spoof ${TARGET_SPOOF_VERSION} from local files (offline)"
     say "3) Install spoof ${TARGET_SPOOF_VERSION} from GitHub release (online)"
-    say "4) Configure as Client"
-    say "5) Configure as Server"
-    say "6) Start service"
-    say "7) Stop service"
-    say "8) Restart service"
-    say "9) Service status"
-    say "10) Live logs"
-    say "11) Health check"
-    say "12) X-UI helper"
-    say "13) Backup configs"
-    say "14) Restore backup"
-    say "15) Show paths"
-    say "16) Uninstall"
+    say "4) Server Step 1: generate SERVER pairing"
+    say "5) Client Step 2: configure from SERVER pairing"
+    say "6) Server Step 3: finalize from CLIENT pairing"
+    say "7) Manual configure as Client"
+    say "8) Manual configure as Server"
+    say "9) Start service"
+    say "10) Stop service"
+    say "11) Restart service"
+    say "12) Service status"
+    say "13) Live logs"
+    say "14) Health check"
+    say "15) X-UI helper"
+    say "16) Show saved pairing info"
+    say "17) Backup configs"
+    say "18) Restore backup"
+    say "19) Show paths"
+    say "20) Uninstall"
     say "0) Exit"
     printf '\nSelect an option: '
     local choice
@@ -1011,19 +1284,23 @@ main_menu() {
       1) copy_manager_to_path; pause ;;
       2) install_offline; pause ;;
       3) install_online; pause ;;
-      4) configure_client; pause ;;
-      5) configure_server; pause ;;
-      6) manage_service_action start; pause ;;
-      7) manage_service_action stop; pause ;;
-      8) manage_service_action restart; pause ;;
-      9) manage_service_action status; pause ;;
-      10) live_logs ;;
-      11) health_check; pause ;;
-      12) xui_helper; pause ;;
-      13) backup_now; pause ;;
-      14) restore_backup; pause ;;
-      15) show_paths; pause ;;
-      16) uninstall_manager; pause ;;
+      4) prepare_server_pairing; pause ;;
+      5) configure_client_from_pairing; pause ;;
+      6) finalize_server_from_client_pairing; pause ;;
+      7) configure_client; pause ;;
+      8) configure_server; pause ;;
+      9) manage_service_action start; pause ;;
+      10) manage_service_action stop; pause ;;
+      11) manage_service_action restart; pause ;;
+      12) manage_service_action status; pause ;;
+      13) live_logs ;;
+      14) health_check; pause ;;
+      15) xui_helper; pause ;;
+      16) show_pairing_info; pause ;;
+      17) backup_now; pause ;;
+      18) restore_backup; pause ;;
+      19) show_paths; pause ;;
+      20) uninstall_manager; pause ;;
       0) exit 0 ;;
       *) fail "Invalid option."; pause ;;
     esac
@@ -1034,8 +1311,12 @@ case "${1:-}" in
   --install-manager) copy_manager_to_path ;;
   --install-offline) install_offline ;;
   --install-online) install_online ;;
+  --server-step1) prepare_server_pairing ;;
+  --client-step2) configure_client_from_pairing ;;
+  --server-step3) finalize_server_from_client_pairing ;;
   --configure-client) configure_client ;;
   --configure-server) configure_server ;;
+  --show-pairing) show_pairing_info ;;
   --health) health_check ;;
   --xui-helper) xui_helper ;;
   --version) echo "${APP_NAME} ${APP_VERSION} targeting spoof-tunnel ${TARGET_SPOOF_VERSION}" ;;
@@ -1047,9 +1328,12 @@ Usage:
   sudo bash st-manager.sh                 Interactive menu
   sudo bash st-manager.sh --install-offline
   sudo bash st-manager.sh --install-online
-  sudo bash st-manager.sh --configure-client
-  sudo bash st-manager.sh --configure-server
-  sudo st-manager                         Interactive menu after installation
+  sudo bash st-manager.sh --server-step1
+  sudo bash st-manager.sh --client-step2
+  sudo bash st-manager.sh --server-step3
+  sudo bash st-manager.sh --configure-client   Manual client config
+  sudo bash st-manager.sh --configure-server   Manual server config
+  sudo st-manager                              Interactive menu after installation
 
 Offline install:
   Put a spoof ${TARGET_SPOOF_VERSION} binary or release archive next to this script,
